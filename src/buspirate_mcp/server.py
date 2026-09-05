@@ -11,9 +11,16 @@ import logging
 import os
 from pathlib import Path
 
-from mcp.server import Server
+from mcp.server import Server, ServerRequestContext
 from mcp.server.stdio import stdio_server
-from mcp.types import Tool, TextContent
+from mcp.types import (
+    CallToolRequestParams,
+    CallToolResult,
+    ListToolsResult,
+    PaginatedRequestParams,
+    TextContent,
+    Tool,
+)
 
 from buspirate_mcp.hardware import BusPirateHardware
 from buspirate_mcp.safety import classify_tool, SafetyTier
@@ -702,12 +709,10 @@ TOOL_DEFINITIONS = [
 ]
 
 
-@app.list_tools()
-async def list_tools():
+async def list_tools() -> list[Tool]:
     return TOOL_DEFINITIONS
 
 
-@app.call_tool()
 async def call_tool(name: str, arguments: dict) -> list[TextContent]:
     if name in {"open_uart", "open_spi", "open_i2c", "open_1wire", "la_prepare"} and "project_path" in arguments:
         return [TextContent(type="text", text=json.dumps(
@@ -1034,6 +1039,33 @@ async def call_tool(name: str, arguments: dict) -> list[TextContent]:
         result = {"error": str(exc), "tool": name}
 
     return [TextContent(type="text", text=json.dumps(result, indent=2))]
+
+
+# --- MCP SDK wiring -------------------------------------------------------
+# The mcp>=2.0 low-level Server dropped the 1.x decorator API
+# (@app.list_tools / @app.call_tool). Handlers are registered explicitly and
+# receive the request context plus a validated params model, and must return
+# an SDK result model. These adapters keep list_tools()/call_tool() above as
+# plain functions so tests (and any other caller) can invoke them directly.
+
+
+async def _on_list_tools(
+    ctx: ServerRequestContext,
+    params: PaginatedRequestParams | None = None,
+) -> ListToolsResult:
+    return ListToolsResult(tools=await list_tools())
+
+
+async def _on_call_tool(
+    ctx: ServerRequestContext,
+    params: CallToolRequestParams,
+) -> CallToolResult:
+    content = await call_tool(params.name, params.arguments or {})
+    return CallToolResult(content=content)
+
+
+app.add_request_handler("tools/list", PaginatedRequestParams, _on_list_tools)
+app.add_request_handler("tools/call", CallToolRequestParams, _on_call_tool)
 
 
 async def main():

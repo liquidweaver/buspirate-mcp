@@ -11,7 +11,7 @@ version = "0.1.0"
 description = "MCP server for BusPirate 6 hardware security testing"
 requires-python = ">=3.11"
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=2.0.0,<3.0.0",
     "pyserial>=3.5",
     "cobs>=1.2.0",
     "esptool>=4.0",
